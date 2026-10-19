@@ -1,0 +1,251 @@
+// =============================================================
+// "יחד" – מבנה מסד הנתונים
+// כל שינוי כאן מחייב migration חדש: npm run db:migrate
+// =============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- ערכי בחירה ----------
+
+enum EventCategory {
+  FAMILY          // משפחתי
+  FRIENDS         // חברים
+  CLASS_COMMUNITY // כיתה / קהילה
+  WORK            // עבודה
+  OTHER           // אחר
+}
+
+enum ActivityType {
+  BIRTHDAY     // יום הולדת
+  GATHERING    // מפגש
+  MEAL         // ארוחה
+  SPORT        // ספורט
+  TRIP         // טיול
+  REFRESHMENT  // התרעננות
+  HOLIDAY      // חג
+  OTHER        // אחר
+}
+
+enum EventStatus {
+  PLANNING   // בתכנון – הסקר פתוח
+  SCHEDULED  // נקבע
+  COMPLETED  // הסתיים
+  CANCELLED  // בוטל
+}
+
+enum EventRole {
+  ORGANIZER   // מארגן
+  PARTICIPANT // משתתף
+}
+
+enum InvitationStatus {
+  PENDING  // ממתינה
+  ACCEPTED // אושרה
+  DECLINED // נדחתה
+}
+
+// ---------- טבלאות ----------
+
+/// משתמשים רשומים
+model User {
+  id           Int      @id @default(autoincrement())
+  fullName     String   @db.VarChar(80)
+  email        String   @unique @db.VarChar(254) // נשמר באותיות קטנות
+  phone        String   @unique @db.VarChar(15)  // ספרות בלבד, למשל 0501234567
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  organizedEvents     Event[]              @relation("EventOrganizer")
+  participations      EventParticipant[]
+  sentInvitations     Invitation[]         @relation("InvitationSender")
+  assignedTasks       Task[]               @relation("TaskAssignee")
+  surveyAnswers       SurveyAnswer[]
+  surveyResponses     SurveyResponse[]
+  expenses            Expense[]
+  transfersToPay      SettlementTransfer[] @relation("TransferFrom")
+  transfersToReceive  SettlementTransfer[] @relation("TransferTo")
+}
+
+/// מפגש – האובייקט המרכזי
+model Event {
+  id            Int           @id @default(autoincrement())
+  title         String        @db.VarChar(100)
+  description   String?       @db.VarChar(1000)
+  eventDate     DateTime?
+  location      String?       @db.VarChar(200)
+  food          String?       @db.VarChar(500)
+  category      EventCategory @default(OTHER)
+  activityType  ActivityType  @default(OTHER)
+  status        EventStatus   @default(PLANNING)
+  budget        Decimal?      @db.Decimal(10, 2)
+  organizerId   Int
+  organizer     User          @relation("EventOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+
+  /// מתי חושבה ההתחשבנות האחרונה (ריק = עוד לא חושבה)
+  settlementCalculatedAt DateTime?
+  /// true כשמשהו השתנה (הוצאה / משתתף) אחרי החישוב האחרון
+  settlementOutdated     Boolean   @default(false)
+  /// תמונת מצב של החישוב האחרון: סך הכל, חלק לאדם, יתרות
+  settlementSummary      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants   EventParticipant[]
+  invitations    Invitation[]
+  tasks          Task[]
+  questions      SurveyQuestion[]
+  responses      SurveyResponse[]
+  expenses       Expense[]
+  transfers      SettlementTransfer[]
+
+  @@index([organizerId])
+  @@index([eventDate])
+}
+
+/// מי חבר בכל מפגש ובאיזה תפקיד
+model EventParticipant {
+  id       Int       @id @default(autoincrement())
+  eventId  Int
+  userId   Int
+  role     EventRole @default(PARTICIPANT)
+  joinedAt DateTime  @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+/// הזמנות לפי מייל ו/או טלפון (גם למי שעוד לא נרשם)
+model Invitation {
+  id          Int              @id @default(autoincrement())
+  eventId     Int
+  invitedById Int
+  email       String?          @db.VarChar(254)
+  phone       String?          @db.VarChar(15)
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  respondedAt DateTime?
+
+  event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  invitedBy User  @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([email, status])
+  @@index([phone, status])
+  @@index([eventId])
+}
+
+/// תפקידים / משימות במפגש
+model Task {
+  id          Int      @id @default(autoincrement())
+  eventId     Int
+  description String   @db.VarChar(200)
+  assigneeId  Int?     // ריק = תפקיד פנוי
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event    Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  assignee User? @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([assigneeId])
+}
+
+/// שאלת סקר
+model SurveyQuestion {
+  id      Int    @id @default(autoincrement())
+  eventId Int
+  text    String @db.VarChar(300)
+  order   Int
+
+  event   Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  options SurveyOption[]
+
+  @@index([eventId])
+}
+
+/// אפשרות תשובה לשאלה
+model SurveyOption {
+  id         Int    @id @default(autoincrement())
+  questionId Int
+  text       String @db.VarChar(200)
+  order      Int
+
+  question SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answers  SurveyAnswer[]
+
+  @@index([questionId])
+}
+
+/// סימון של משתתף על אפשרות (אפשר לסמן כמה אפשרויות באותה שאלה)
+model SurveyAnswer {
+  id        Int      @id @default(autoincrement())
+  optionId  Int
+  userId    Int
+  createdAt DateTime @default(now())
+
+  option SurveyOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, userId])
+  @@index([userId])
+}
+
+/// "הגשה" של סקר ע"י משתתף + הערה חופשית למארגן
+model SurveyResponse {
+  id          Int      @id @default(autoincrement())
+  eventId     Int
+  userId      Int
+  note        String?  @db.VarChar(1000)
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+/// הוצאה ששולמה ע"י משתתף
+model Expense {
+  id        Int      @id @default(autoincrement())
+  eventId   Int
+  paidById  Int
+  amount    Decimal  @db.Decimal(10, 2)
+  reason    String   @db.VarChar(200)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  paidBy User  @relation(fields: [paidById], references: [id], onDelete: Restrict)
+
+  @@index([eventId])
+  @@index([paidById])
+}
+
+/// תוצאת ההתחשבנות האחרונה: מי מעביר כמה ולמי
+model SettlementTransfer {
+  id         Int     @id @default(autoincrement())
+  eventId    Int
+  fromUserId Int
+  toUserId   Int
+  amount     Decimal @db.Decimal(10, 2)
+
+  event    Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fromUser User  @relation("TransferFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User  @relation("TransferTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([fromUserId])
+  @@index([toUserId])
+}

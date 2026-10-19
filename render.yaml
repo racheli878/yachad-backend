@@ -1,0 +1,26 @@
+# הגדרות פריסה ל-Render (Blueprint).
+# מסד הנתונים נמצא אצל ספק נפרד (למשל Neon) – מדביקים את הכתובת שלו ב-DATABASE_URL.
+services:
+  - type: web
+    name: yachad-backend
+    runtime: node
+    plan: free
+    # --include=dev: צריך את TypeScript כדי לבנות, גם כש-NODE_ENV=production
+    buildCommand: npm ci --include=dev && npm run build
+    # מריץ את ה-migrations על מסד הנתונים ואז מפעיל את השרת
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # ימולא ידנית ב-Render (סוד)
+      - key: JWT_SECRET
+        generateValue: true # Render ייצור מפתח אקראי וחזק
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGIN
+        sync: false # ימולא ידנית: כתובת האתר של צד הלקוח
