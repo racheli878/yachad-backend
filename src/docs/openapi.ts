@@ -735,7 +735,7 @@ const paths = {
     get: op({
       tag: '5. משתתפים והזמנות',
       summary: 'ההזמנות הממתינות שלי',
-      description: 'הזמנות שהמייל או הטלפון שלי תואמים להן, עם פרטים בסיסיים של המפגש. הזמנה אחת לכל מפגש. החדשות ראשונות.',
+      description: 'הזמנות שהמייל או הטלפון שלי תואמים להן, עם פרטים בסיסיים של המפגש. הזמנה אחת לכל מפגש. החדשות ראשונות. הזמנות למפגשים שהסתיימו או בוטלו לא מוצגות.',
       responses: {
         200: json(obj({ count: int(), invitations: arr(ref('MyInvitation')) }), {
           count: 1,
@@ -760,7 +760,10 @@ const paths = {
       responses: {
         200: json(obj({ message: str(), eventId: int() }), { message: 'ההזמנה אושרה, הצטרפת למפגש', eventId: 12 }),
         404: errorResponse('ההזמנה לא נמצאה, לא שלך, או שכבר נענתה', { notFound: ['INVITATION_NOT_FOUND', 'ההזמנה לא נמצאה או שכבר נענתה'] }),
-        409: conflictResponse({ already: ['ALREADY_PARTICIPANT', 'את כבר משתתפת במפגש הזה'] }),
+        409: conflictResponse({
+          already: ['ALREADY_PARTICIPANT', 'את כבר משתתפת במפגש הזה'],
+          closed: ['EVENT_CLOSED', 'המפגש כבר הסתיים או בוטל, ולכן אי אפשר להצטרף אליו'],
+        }),
       },
     }),
   },

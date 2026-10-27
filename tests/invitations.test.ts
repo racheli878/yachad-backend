@@ -46,6 +46,27 @@ describe('הזמנות', () => {
     expect(list.body.invitations[0].registeredUser.fullName).toBe('אורחת');
   });
 
+  it('אי אפשר לאשר הזמנה למפגש שהסתיים או בוטל, והיא לא מוצגת ברשימה', async () => {
+    const org = await registerUser();
+    const guest = await registerUser();
+    const { body } = await api().post('/api/events').set(auth(org)).send({ title: 'מפגש', invitees: [{ email: guest.email }] }).expect(201);
+    const eventId = body.event.id;
+    const inv = (await api().get('/api/invitations/me').set(auth(guest))).body.invitations[0];
+
+    for (const status of ['COMPLETED', 'CANCELLED']) {
+      await api().put(`/api/events/${eventId}`).set(auth(org)).send({ status }).expect(200);
+      expect((await api().get('/api/invitations/me').set(auth(guest))).body.count).toBe(0);
+      const res = await api().post(`/api/invitations/${inv.id}/accept`).set(auth(guest)).expect(409);
+      expect(res.body.error.code).toBe('EVENT_CLOSED');
+    }
+
+    // המפגש חזר לתכנון – אפשר שוב לאשר
+    await api().put(`/api/events/${eventId}`).set(auth(org)).send({ status: 'PLANNING' }).expect(200);
+    await api().post(`/api/invitations/${inv.id}/accept`).set(auth(guest)).expect(200);
+    const participants = await api().get(`/api/events/${eventId}/participants`).set(auth(org)).expect(200);
+    expect(participants.body.count).toBe(2);
+  });
+
   it('דחיית הזמנה; המארגן רואה "נדחתה" ויכול להזמין שוב', async () => {
     const org = await registerUser();
     const guest = await registerUser();

@@ -1,4 +1,4 @@
-import { EventRole, InvitationStatus, Prisma, type Invitation } from '@prisma/client';
+import { EventRole, EventStatus, InvitationStatus, Prisma, type Invitation } from '@prisma/client';
 import { prisma } from '../../db/prisma';
 import type { AuthUser } from '../../middleware/auth';
 import { conflict, notFound } from '../../utils/AppError';
@@ -14,6 +14,9 @@ const SKIP_MESSAGES: Record<SkipReason, string> = {
   ALREADY_INVITED: 'כבר נשלחה לאדם הזמנה שממתינה לתשובה',
   DUPLICATE_IN_LIST: 'המוזמן מופיע ברשימה יותר מפעם אחת',
 };
+
+/** למפגש שהסתיים או בוטל אי אפשר להצטרף */
+const CLOSED_STATUSES: EventStatus[] = [EventStatus.COMPLETED, EventStatus.CANCELLED];
 
 /** תנאי שמוצא הזמנות שמתאימות למייל או לטלפון של משתמש */
 const matchesUser = (user: { email: string; phone: string }): Prisma.InvitationWhereInput => ({
@@ -150,7 +153,7 @@ export const myPendingInvitations = async (user: AuthUser) => {
     where: {
       status: InvitationStatus.PENDING,
       ...matchesUser(user),
-      event: { participants: { none: { userId: user.id } } },
+      event: { participants: { none: { userId: user.id } }, status: { notIn: CLOSED_STATUSES } },
     },
     orderBy: { createdAt: 'asc' },
     include: {
@@ -218,6 +221,11 @@ export const acceptInvitation = async (invitationId: number, user: AuthUser) => 
   });
   if (already) {
     throw conflict('ALREADY_PARTICIPANT', 'את כבר משתתפת במפגש הזה');
+  }
+
+  const event = await prisma.event.findUnique({ where: { id: invitation.eventId }, select: { status: true } });
+  if (event && CLOSED_STATUSES.includes(event.status)) {
+    throw conflict('EVENT_CLOSED', 'המפגש כבר הסתיים או בוטל, ולכן אי אפשר להצטרף אליו');
   }
 
   await prisma.$transaction(async (tx) => {
