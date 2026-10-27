@@ -6,6 +6,7 @@ import swaggerUi from 'swagger-ui-express';
 import { corsOrigins } from './config/env';
 import { prisma } from './db/prisma';
 import { openApiDocument } from './docs/openapi';
+import { closePastEvents } from './middleware/closePastEvents';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { authRouter } from './modules/auth/auth.routes';
 import { eventsRouter } from './modules/events/events.routes';
@@ -68,6 +69,7 @@ export const createApp = () => {
     });
   });
 
+  api.use(closePastEvents);
   api.use('/auth', authRouter);
   api.use('/users', usersRouter);
   api.use('/home', homeRouter);

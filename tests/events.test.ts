@@ -185,4 +185,15 @@ describe('עזיבה והסרה', () => {
     const list = await api().get(`/api/events/${eventId}/participants`).set(auth(org)).expect(200);
     expect(list.body.count).toBe(2);
   });
+  it('מפגש שעבר לו התאריך מסומן אוטומטית "הסתיים" (מפגש שבוטל נשאר "בוטל")', async () => {
+    const org = await registerUser();
+    const past = (await api().post('/api/events').set(auth(org)).send({ title: 'עבר', eventDate: '2020-01-01T10:00:00.000Z', status: 'SCHEDULED' }).expect(201)).body.event.id;
+    const cancelled = (await api().post('/api/events').set(auth(org)).send({ title: 'בוטל', eventDate: '2020-01-01T10:00:00.000Z', status: 'CANCELLED' }).expect(201)).body.event.id;
+    const future = (await api().post('/api/events').set(auth(org)).send({ title: 'עתידי', eventDate: '2031-01-01T10:00:00.000Z' }).expect(201)).body.event.id;
+
+    const status = async (id: number) => (await api().get(`/api/events/${id}`).set(auth(org)).expect(200)).body.event.status;
+    expect(await status(past)).toBe('COMPLETED');
+    expect(await status(cancelled)).toBe('CANCELLED');
+    expect(await status(future)).toBe('PLANNING');
+  });
 });
